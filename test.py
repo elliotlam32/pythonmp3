@@ -1,12 +1,36 @@
 import os
 import pygame
 import time
+import threading
 from pathlib import Path
 
 
 #would have to make new global var queuelist that retains information. figure out how to remove once done
 queuelist = []
 mp3_files = []
+paused = False
+current_folder = None
+playing = False   # True while a song is supposed to be playing
+
+
+def watcher():
+    global playing
+    while True:
+        time.sleep(0.5)
+        # get_busy() is False while paused, so check the flag too
+        if playing and not paused and not pygame.mixer.music.get_busy():
+            if queuelist:
+                next_song = queuelist.pop(0)
+                pygame.mixer.music.load(os.path.join(current_folder, next_song))
+                pygame.mixer.music.play()
+                print(f"\nnow playing: {next_song}")
+                print(f"Queue: {queuelist}")
+                print("> ", end="", flush=True)
+            else:
+                playing = False
+                print("\nqueue finished. press enter / type STOP to return home")
+                print("> ", end="", flush=True)
+
 
 def queuemusic(folder, song_name):
     #path song 
@@ -14,18 +38,23 @@ def queuemusic(folder, song_name):
     if not os.path.exists(file_path):
         print("file not found")
         return
-
-    pygame.mixer.music.queue(file_path)
+    
+    #this is causing issues
     queuelist.append(song_name)
     print(f"Queue: {queuelist}")
     print("----------------------------------------")
     return
 
 def play_music(folder, song_name):
+    global paused, playing, current_folder
     file_path = os.path.join(folder, song_name)
     if not os.path.exists(file_path):
         print("file not found")
         return
+
+    current_folder = folder
+    paused = False
+    playing = True
     pygame.mixer.music.load(file_path)
     pygame.mixer.music.play()
     #if there is something in the queue list print it. if not then don't
@@ -44,9 +73,11 @@ def play_music(folder, song_name):
 
         if command == "PAUSE":
             pygame.mixer.music.pause()
+            paused = True
             print("Paused")
         elif command == "RESUME":
             pygame.mixer.music.unpause()
+            paused = False
             print("Resumed")
         elif command == "QUEUE":
             queue = input("input song # to queue: ")
@@ -60,29 +91,32 @@ def play_music(folder, song_name):
                 print("song index does not exist")
             #figure out how to queue music
         elif command == "SKIP":
+            paused = False
             if not queuelist:
+                playing = False
                 pygame.mixer.music.stop()
                 print("no songs in queue. sending back to home")
                 time.sleep(1)
                 return
-            else:
-                pygame.mixer.music.stop()
-                play_music(folder, queuelist.pop(0))
-            return
+            pygame.mixer.music.stop()
         elif command == "STOP" or command == "QUIT":
+            playing = False
+            queuelist.clear()
             pygame.mixer.music.stop()
             print("Stopped")
             return
         else:
             print("Invalid command")
-    
+
+
 def main():
     try:
         pygame.mixer.init()
     except  pygame.error as e:
         print("failed to initialize mixer", e)
         return
-
+    
+    threading.Thread(target=watcher, daemon=True).start()
     folder = Path("C:/Users/User/Music")
 
     if not os.path.isdir(folder):
